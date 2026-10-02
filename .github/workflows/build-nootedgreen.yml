@@ -1,0 +1,58 @@
+name: Build NootedGreen
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'NootedGreen/**'
+      - 'NootedGreen.xcodeproj/**'
+      - 'MacKernelSDK/**'
+      - '.github/workflows/build-nootedgreen.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: List schemes
+        run: xcodebuild -project NootedGreen.xcodeproj -list
+
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project NootedGreen.xcodeproj \
+            -scheme NootedGreen \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Collect kext
+        run: |
+          set -e
+          mkdir -p artifacts
+          KEXT="$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name 'NootedGreen.kext' -path '*Release*' | head -1)"
+          if [ -z "$KEXT" ]; then
+            echo 'NootedGreen.kext was not found after build.'
+            find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 8 -name '*.kext' -print || true
+            exit 1
+          fi
+          echo "Found: $KEXT"
+          ditto "$KEXT" artifacts/NootedGreen.kext
+          ditto -c -k --sequesterRsrc --keepParent artifacts/NootedGreen.kext artifacts/NootedGreen.kext.zip
+
+      - name: Upload NootedGreen artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NootedGreen-Release
+          path: artifacts/NootedGreen.kext.zip
+          if-no-files-found: error
